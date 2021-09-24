@@ -1,0 +1,96 @@
+import socket
+import signal
+import sys
+import os
+import threading
+
+# Global variables
+# Keep the server running or not
+isRunning = True
+# Keep the socket of server
+serverSocket = socket.socket()
+
+#Client ID
+clientID = 0
+
+def handle_signal(signalNo):
+    global isRunning, serverSocket
+    print("\nSignal caught. Stop server!!!!")
+    # Mark the program as stopped
+    isRunning = False
+    serverSocket.shutdown(socket.SHUT_RD)
+    serverSocket.close()
+    return
+
+
+def client_handler(clientConnection):
+    try:
+        clientConnection.send(b"accio\r\n")
+        writeFile = open("{}.out".format(clientID), 'wb')
+        data = clientConnection.recv(1024)
+        writeFile.write(data)
+        totalReceive = len(data)
+        while data:
+            data = clientConnection.recv(1024)
+            writeFile.write(data)
+            totalReceive += len(data)
+        # Finished receive client
+        print("Bytes received: {}".format(totalReceive))
+
+        # Close
+        writeFile.close()
+        clientConnection.close()
+    except socket.timeout:
+        writeFile.flush()
+        writeFile.write(b"ERROR")
+        writeFile.close()
+        clientConnection.close()
+        sys.stderr.write("ERROR: We reach timeout during recive file.\n")
+
+# Try to register signal handlers
+signal.signal(signal.SIGQUIT, handle_signal)
+signal.signal(signal.SIGTERM, handle_signal)
+signal.signal(signal.SIGINT, handle_signal)
+
+
+
+
+if __name__ == "__main__":
+    # Try to parsing the arguments
+    if len(sys.argv) != 2:
+        sys.stderr.write("ERROR: Invalid running argument. Usage: python3 server-s <PORT>\n")
+        sys.exit(1)
+    # Server should be accpect any net work interface
+    hostAddress = "0.0.0.0"
+    try:
+        port = int(sys.argv[1])
+    except:
+        sys.stderr.write("ERROR: Invalid argument. PORT should be a number")
+        sys.exit(1)
+    # It is getting harder and harder to register new applications in the space below 1023 (these often use registered ports in the range 1024 to 49151)
+    if port < 1024:
+        sys.stderr.write("ERROR: PORT should not in range 1-1023.\n");
+        sys.exit(1)
+    
+    # Bin the host to accpet connection
+    try:
+        serverSocket.bind((hostAddress, port))
+        print("Server started at port: {}\n".format(port))
+    except:
+        sys.stderr.write("ERROR: Can not create the socket at host: {} and port: {}".format(hostAddress, port))
+        sys.exit(1)
+    # Start listen
+    serverSocket.listen(10)
+    # Handle server logic
+    while isRunning:
+        try:
+            # accept any connection comming
+            clientConnection, clientAddress = serverSocket.accept()
+            print("Received client connection from address: {}".format(clientAddress))
+            # Set timeout when handling the clientConnection
+            clientConnection.settimeout(10)
+            clientID += 1
+            clientThread = threading.Thread( target= client_handler, args=(clientConnection,) )
+            clientThread.start()
+        except OSError:
+            pass
